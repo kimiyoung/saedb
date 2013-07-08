@@ -6,10 +6,14 @@
 #include <utility>
 #include <sstream>
 #include <cstring>
+#include <functional>
 
 #include "../serialization/serialization_includes.hpp"
 
 #include "type_info.hpp"
+
+using sae::serialization::ISerializeStream;
+using sae::serialization::OSerializeStream;
 
 namespace sae {
 namespace io {
@@ -199,6 +203,35 @@ namespace io {
             edge_data_types.push_back(data_type(data_type_size, dt));
         }
 
+        /*
+         * Associate each data type with a serialize/deserialize function. 
+         *
+         * After call Associate() with each data type, Graph Builder saves all the functions
+         * for serialization. And in later loading/saving of Graph, builder will get related
+         * serialize/deserialize function at first, then use them as a wrapper for underlying 
+         * serialization.
+         * 
+         * Parameter: 
+         * data_type_rank: index of specific data type
+         * 
+         */
+        template <typename T>
+        void Associate(int data_type_rank) {
+            auto iit = serialize_func_map.find(data_type_rank);
+            if (iit == serialize_func_map.end()) {
+                serialize_func_map[data_type_rank] = [&](OSerializeStream& out, void* d) {
+                    out << *((T*)d);
+                };
+            }
+
+            auto oit = deserialize_func_map.find(data_type_rank);
+            if (oit == deserialize_func_map.end()) {
+                deserialize_func_map[data_type_rank] = [&](ISerializeStream& in, void* d) {
+                    in >> *((T*)d);
+                };
+            }
+        }
+
         // no destructor?
     private:
         std::vector<vertex_with_data> vertices;
@@ -208,6 +241,10 @@ namespace io {
         std::vector<data_type> edge_data_types;
 
         std::map<vkey_t, vid_t> vid_map;
+
+        /* map data type rank to corresponding serializa/deserialize function */
+        std::map<int, std::function<void(OSerializeStream&, void*)> > serialize_func_map;   /* serialize function map */
+        std::map<int, std::function<void(ISerializeStream&, void*)> > deserialize_func_map; /* deserialize function map */
 
         vid_t map(vkey_t key) {
             vid_t result;
